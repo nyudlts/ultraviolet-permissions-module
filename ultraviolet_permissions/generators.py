@@ -16,6 +16,35 @@ from invenio_access.models import  RoleNeed
 from invenio_records_permissions.generators import Generator
 from flask_login import current_user
 
+from invenio_files_rest.models import Location
+from invenio_rdm_records.proxies import current_rdm_records
+
+
+SUPPRESSED_NAME = "suppressed"
+
+
+def get_files_from_pid(record_pid):
+    record = current_rdm_records.records_service.read(
+        system_identity, record_pid
+    )
+    record = current_rdm_records.records_service.record_cls.pid.resolve(
+        record_pid
+    )
+    file_manager = record.files
+    for file_key in file_manager:
+        pprint(file_key)
+        pprint(record.files[file_key].file.uri)
+        pprint(record.files[file_key].__dir__())
+        pprint(record.files[file_key].metadata)
+
+
+def get_suppressed_location_uri():
+    return Location.get_by_name(SUPPRESSED_NAME).uri
+
+
+def is_suppressed(record_file):
+    return record_file.uri.startswith(get_suppressed_location_uri())
+
 
 def get_roles(record, user_role):
     # roles = []
@@ -199,3 +228,28 @@ class IfRestricted(Generator):
         """Filters for current identity as super user."""
         # TODO: Implement with new permissions metadata
         return dsl.Q('match_all')
+
+
+class IfSuppressedFile(Generator):
+    """Conditional generator for suppressed files."""
+
+    def _condition(self, record, file_key=None, **kwargs):
+        is_file_suppressed = False
+        if file_key:
+            file_record = record.files.get(file_key)
+            file = file_record.file if file_record is not None else None
+            is_file_suppressed = file and is_suppressed(file)
+        else:
+            # files_records = record.files.entries
+            # for file_record in file_records:
+            #     file = file_record.file
+            #     if file and not is_suppressed(file):
+            #         is_file_suppressed = False
+            #         break
+            is_suppressed = all(
+                [
+                    file_record.file and is_suppressed(file_record.file)
+                    for file_record in file_records
+                ]
+            )
+        return is_file_suppressed
