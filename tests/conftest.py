@@ -23,6 +23,8 @@ from invenio_access.models import Role, User
 from invenio_db import db
 from invenio_app.factory import create_app as _create_app
 from invenio_accounts.testutils import login_user_via_session
+from invenio_records.api import Record
+from invenio_records_files.models import RecordsBuckets
 
 from pathlib import Path
 import sys
@@ -185,3 +187,59 @@ def create_proprietary_record(client):
     response = client.post("/records", json=create_proprietary_record, headers=minimal_headers())
     assert response.status_code == 201
     return response.json['id']
+
+
+@pytest.fixture(scope="session")
+def create_record():
+    """Factory pattern for a loaded Record.
+
+    The returned dict record has the interface of a Record.
+
+    It provides a default value for each required field.
+    """
+
+    def _create_record(metadata=None):
+        # TODO: Modify according to record schema
+        metadata = metadata or {}
+        record = {
+            "_access": {
+                # TODO: Remove if "access_right" includes it
+                "metadata_restricted": False,
+                "files_restricted": False,
+            },
+            "access_right": "open",
+            "title": "This is a record",
+            "description": "This record is a test record",
+            "owners": [1, 2, 3],
+            "internal": {
+                "access_levels": {},
+            },
+        }
+        record.update(metadata)
+        return record
+
+    return _create_record
+
+
+@pytest.fixture(scope="function")
+def create_real_record(create_record, location):
+    """Factory pattern to create a real Record.
+
+    This is needed for tests relying on database and search engine operations.
+    """
+
+    def _create_real_record(bucket, metadata=None):
+        record_dict = create_record(metadata)
+
+        record = Record.create(record_dict, with_bucket=False)
+
+        # Create link between record and bucket
+        RecordsBuckets.create(record=record.model, bucket=bucket)
+        record._bucket = bucket
+
+        return record
+        # Flush to index and database
+        # current_search.flush_and_refresh(index='*')
+        # db.session.commit()
+
+    return _create_real_record
