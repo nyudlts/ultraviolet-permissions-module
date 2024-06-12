@@ -11,10 +11,12 @@
 from flask import Flask
 import flask_security
 import pytest
+import pytest_invenio
 
 from conftest import create_roles, assign_roles, login_user, logout_user, create_proprietary_record
 from invenio_accounts.testutils import create_test_user
 # from invenio_rdm_records.tests.conftest import minimal_record
+from invenio_accounts.testutils import login_user_via_session
 
 import sys
 sys.path.append('../ultraviolet_permissions')
@@ -45,11 +47,14 @@ def test_view(base_client):
     assert res.status_code == 200
     assert 'Welcome to Ultraviolet Permssions' in str(res.data)
 
-def test_user_without_special_role(base_client):
+def test_user_without_special_role(base_client, UserFixture, app, db, create_proprietary_record):
     client = base_client
-    user = create_test_user()
+    user = UserFixture(
+        email="test@test1.org",
+        password="superuser",
+    )
+    user.create(app, db)
     recid = create_proprietary_record(client)
-    login_user(client, user)
     url = f"/records/{recid}"
 
     # Anonymous user can't list files
@@ -65,14 +70,18 @@ def test_anonymous(base_client):
     response = client.get(url, headers=headers)
     assert 403 == response.status_code
 
-def test_user_with_special_role(base_client):
+def test_user_with_special_role(base_client, UserFixture, app, db, create_proprietary_record):
     client = base_client
-    user = create_test_user()
+    user = UserFixture(
+        email="test@test1.org",
+        password="superuser",
+    )
+    user.create(app, db)
     role = create_roles(['nyu'])
     assign_roles(user, [role])
     login_user(client, user)
 
-    recid = create_proprietary_record(client)
+    recid = create_proprietary_record["recid"]
 
     url = f"/records/{recid}"
 
