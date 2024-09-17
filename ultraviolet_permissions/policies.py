@@ -12,7 +12,7 @@ from flask_principal import Permission, RoleNeed
 from invenio_records_permissions.generators import AnyUser, \
     AuthenticatedUser, Disable, SystemProcess
 from invenio_rdm_records.services.permissions import RDMRecordPermissionPolicy
-from invenio_rdm_records.services.generators import RecordOwners, SecretLinks, CommunityAction
+from invenio_rdm_records.services.generators import RecordOwners, SecretLinks, RecordCommunitiesAction
 from .generators import ProprietaryRecordPermissions, AdminSuperUser, Curator, Depositor, Viewer, RestrictedDataUser, PublicViewer, IfRestricted
 from invenio_communities.permissions import CommunityPermissionPolicy
 
@@ -36,7 +36,7 @@ class UltraVioletPermissionPolicy(RDMRecordPermissionPolicy):
     can_manage = [SystemProcess(), AdminSuperUser(), Depositor()]
     can_curate = can_manage + [SecretLinks("edit"), Curator()]
     can_preview = can_manage + [SecretLinks("preview"), Curator()]
-    can_view = can_manage + [SecretLinks("view"), ProprietaryRecordPermissions(), CommunityAction("view")]
+    can_view = can_manage + [SecretLinks("view"), ProprietaryRecordPermissions(), RecordCommunitiesAction("view")]
 
     can_authenticated = [AuthenticatedUser(), SystemProcess()]
     can_all = [AnyUser(), SystemProcess(), PublicViewer()]

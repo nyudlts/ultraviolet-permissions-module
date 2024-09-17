@@ -8,7 +8,7 @@
 
 """Invenio module that is used to define user permissions for NYUltraviolet ( NYU InvenioRDM instance)"""
 
-from flask_babelex import gettext as _
+from flask_babel import gettext as _
 
 from . import config
 
