@@ -12,9 +12,12 @@
 """UltraViolet Permissions Generators."""
 from invenio_search.engine import dsl
 from invenio_access.permissions import authenticated_user, superuser_access, any_user
-from invenio_access.models import  RoleNeed
+from invenio_access.models import  RoleNeed,UserNeed
 from invenio_records_permissions.generators import Generator
+from invenio_communities.generators import CommunityRoleNeed, CommunityRoles
+from invenio_communities.proxies import current_communities
 from flask_login import current_user
+from flask import request, g, session, current_app
 
 
 def get_roles(record, user_role):
@@ -101,6 +104,34 @@ class Depositor(Generator):
         """Enabling Needs."""
         return [RoleNeed("depositor")]
 
+
+class CommunityDepositor(Generator):
+    """Allows users with the "depositor" role."""
+
+    def __init__(self):
+        """Constructor."""
+        super(CommunityDepositor, self).__init__()
+
+    def needs(self, record=None, **kwargs):
+        try:
+          # Check if the app context is active by trying to access current_app
+          current_app.name
+          """Enabling Needs."""
+          comid=request.args.get('community')
+          expand = request.args.get('expand')
+          if not comid and "updated_community" in session:
+            comid = session["updated_community"]
+          if comid:
+            community = current_communities.service.read(id_=comid, identity=g.identity)
+            if "updated_community" not in session:
+              session["updated_community"]=comid
+            else:
+             if not record and expand:
+               session.pop("updated_community",None)
+            return [CommunityRoleNeed(community.id,"manager"), CommunityRoleNeed(community.id,"curator")]
+          return[]
+        except RuntimeError:
+            return[]
 
 class Viewer(Generator):
     """Allow NYU Viewers for files restricted to NYU"""

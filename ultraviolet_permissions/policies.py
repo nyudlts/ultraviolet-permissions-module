@@ -12,8 +12,8 @@ from flask_principal import Permission, RoleNeed
 from invenio_records_permissions.generators import AnyUser, \
     AuthenticatedUser, Disable, SystemProcess
 from invenio_rdm_records.services.permissions import RDMRecordPermissionPolicy
-from invenio_rdm_records.services.generators import RecordOwners, SecretLinks, RecordCommunitiesAction
-from .generators import ProprietaryRecordPermissions, AdminSuperUser, Curator, Depositor, Viewer, RestrictedDataUser, PublicViewer, IfRestricted
+from invenio_rdm_records.services.generators import RecordOwners, SecretLinks, RecordCommunitiesAction, AccessGrant
+from .generators import ProprietaryRecordPermissions, AdminSuperUser, Curator, Depositor, Viewer, RestrictedDataUser, PublicViewer, IfRestricted,  CommunityDepositor
 from invenio_communities.permissions import CommunityPermissionPolicy
 
 
@@ -33,10 +33,10 @@ class UltraVioletPermissionPolicy(RDMRecordPermissionPolicy):
     #
     # High-level permissions (used by low-level)
     #
-    can_manage = [SystemProcess(), AdminSuperUser(), Depositor()]
-    can_curate = can_manage + [SecretLinks("edit"), Curator()]
-    can_preview = can_manage + [SecretLinks("preview"), Curator()]
-    can_view = can_manage + [SecretLinks("view"), ProprietaryRecordPermissions(), RecordCommunitiesAction("view")]
+    can_manage = [ RecordOwners(), SystemProcess(), AccessGrant("manage"), AdminSuperUser(), Depositor(),CommunityDepositor(),RecordCommunitiesAction("curate"), RecordCommunitiesAction("manage")]
+    can_curate = can_manage + [SecretLinks("edit"), AccessGrant("edit"),Curator()]
+    can_preview = can_manage + [SecretLinks("preview"), AccessGrant("view"),Curator()]
+    can_view = can_manage + [SecretLinks("view"), ProprietaryRecordPermissions(), AccessGrant("view"),RecordCommunitiesAction("view")]
 
     can_authenticated = [AuthenticatedUser(), SystemProcess()]
     can_all = [AnyUser(), SystemProcess(), PublicViewer()]
@@ -45,7 +45,7 @@ class UltraVioletPermissionPolicy(RDMRecordPermissionPolicy):
     #  Records
     #
     # Allow submitting new record
-    can_create = can_manage
+    can_create = can_manage + [CommunityDepositor()] 
 
     #
     # Drafts
@@ -79,7 +79,7 @@ class UltraVioletPermissionPolicy(RDMRecordPermissionPolicy):
     # Allow creating a new version of an existing published record.
     can_new_version = can_curate
     # Allow publishing a new record or changes to an existing record.
-    can_publish = can_curate
+    can_publish = [ AdminSuperUser(), SystemProcess(), RecordCommunitiesAction("curate"), SecretLinks("edit"), Curator(), AccessGrant("edit"), AccessGrant("manage")] 
     # Allow lifting a record or draft.
     can_lift_embargo = can_manage
     # Allow deleting of records by admins
