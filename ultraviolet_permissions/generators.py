@@ -12,9 +12,43 @@
 """UltraViolet Permissions Generators."""
 from invenio_search.engine import dsl
 from invenio_access.permissions import authenticated_user, superuser_access, any_user
-from invenio_access.models import  RoleNeed
+from invenio_access.models import RoleNeed
 from invenio_records_permissions.generators import Generator
 from flask_login import current_user
+
+try:
+    from invenio_records_permissions.generators import ConditionalGenerator
+except ImportError:
+    from invenio_rdm_records.services.generators import ConditionalGenerator
+
+from invenio_files_rest.models import Location
+from invenio_rdm_records.proxies import current_rdm_records
+
+
+SUPPRESSED_NAME = "suppressed"
+
+
+def get_files_from_pid(record_pid):
+    record = current_rdm_records.records_service.read(
+        system_identity, record_pid
+    )
+    record = current_rdm_records.records_service.record_cls.pid.resolve(
+        record_pid
+    )
+    file_manager = record.files
+    for file_key in file_manager:
+        pprint(file_key)
+        pprint(record.files[file_key].file.uri)
+        pprint(record.files[file_key].__dir__())
+        pprint(record.files[file_key].metadata)
+
+
+def get_suppressed_location_uri():
+    return Location.get_by_name(SUPPRESSED_NAME).uri
+
+
+def is_suppressed(record_file):
+    return record_file.uri.startswith(get_suppressed_location_uri())
 
 
 def get_roles(record, user_role):
@@ -162,8 +196,8 @@ class Curator(Generator):
 class IfRestricted(Generator):
     """IfRestricted.
     IfRestricted(
-    ‘metadata’,
-    RecordPermissionLevel(‘view’),
+    'metadata',
+    RecordPermissionLevel('view'),
     ActionNeed(superuser-access),
     )
     A record permission level defines an aggregated set of
@@ -199,3 +233,20 @@ class IfRestricted(Generator):
         """Filters for current identity as super user."""
         # TODO: Implement with new permissions metadata
         return dsl.Q('match_all')
+
+
+class IfSuppressedFile(ConditionalGenerator):
+    """Conditional generator for suppressed files."""
+
+    def _condition(self, record, file_key=None, **kwargs):
+        is_file_suppressed = False
+        if file_key:
+            file_record = record.files.get(file_key)
+            file = file_record.file if file_record is not None else None
+            is_file_suppressed = file and is_suppressed(file)
+        else:
+            file_records = record.files
+            is_file_suppressed = file_records and all(
+                is_suppressed(file_record.file) for file_record in file_records
+            )
+        return is_file_suppressed

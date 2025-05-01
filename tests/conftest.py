@@ -12,17 +12,27 @@ See https://pytest-invenio.readthedocs.io/ for documentation on which test
 fixtures are available.
 """
 
-import shutil
-import tempfile
 import flask_security
-
+import os
 
 import pytest
 from flask import Flask
 from invenio_access.models import Role, User
-from invenio_db import db
-from invenio_app.factory import create_app as _create_app
+from invenio_records_files.api import Record
 from invenio_accounts.testutils import login_user_via_session
+from invenio_pidstore import InvenioPIDStore
+from invenio_records_files.models import RecordsBuckets
+from invenio_records_files import InvenioRecordsFiles
+from invenio_records_rest import InvenioRecordsREST
+from flask_principal import identity_loaded
+from invenio_accounts import InvenioAccounts
+from invenio_db import InvenioDB, db
+from invenio_i18n import InvenioI18N
+from invenio_access import InvenioAccess
+from invenio_access.loaders import load_permissions_on_identity_loaded
+from invenio_access.permissions import ParameterizedActionNeed, Permission
+from invenio_communities import InvenioCommunities
+from invenio_files_rest import InvenioFilesREST
 
 from pathlib import Path
 import sys
@@ -40,14 +50,50 @@ def celery_config():
 
 
 @pytest.fixture(scope='module')
-def create_app(instance_path):
-    """Application factory fixture."""
-    def factory(**config):
-        app = Flask('testapp', instance_path=instance_path)
-        app.config.update(**config)
-        UltravioletPermssions(app)
-        return app
-    return factory
+def base_app():
+    """Flask base application fixture."""
+    app_ = Flask('testapp')
+    app_.config.update(
+        ACCOUNTS_USE_CELERY=False,
+        SECRET_KEY="CHANGE_ME",
+        SECURITY_PASSWORD_SALT="CHANGE_ME_ALSO",
+        SQLALCHEMY_DATABASE_URI=os.environ.get(
+            "SQLALCHEMY_DATABASE_URI", "sqlite:///test.db"
+        ),
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        FILES_REST_DEFAULT_STORAGE_CLASS = 'S',
+        FILES_REST_STORAGE_CLASS_LIST = {'A': 'Archive', 'S': 'Standard'},
+        FILES_REST_DEFAULT_QUOTA_SIZE = 112345789,
+        FILES_REST_DEFAULT_MAX_FILE_SIZE = 123465789,
+        FILES_REST_OBJECT_KEY_MAX_LEN = 123456789,
+        TESTING=True,
+    )
+    InvenioDB(app_)
+    InvenioI18N(app_)
+    InvenioAccounts(app_)
+    InvenioCommunities(app_)
+    InvenioFilesREST(app_)
+    InvenioAccess(app_)
+    InvenioRecordsREST(app_)
+    InvenioRecordsFiles(app_)
+    InvenioPIDStore(app_)
+    UltravioletPermssions(app_)
+    return app_
+
+
+@pytest.fixture(scope='module')
+def app(base_app, request):
+    """Flask application fixture."""
+    with base_app.app_context():
+        db.create_all()
+
+    def teardown():
+        with base_app.app_context():
+            db.drop_all()
+            identity_loaded.disconnect(load_permissions_on_identity_loaded)
+
+    request.addfinalizer(teardown)
+    return base_app
 
 @pytest.fixture(scope='function')
 def user_role(request):
@@ -185,3 +231,63 @@ def create_proprietary_record(client):
     response = client.post("/records", json=create_proprietary_record, headers=minimal_headers())
     assert response.status_code == 201
     return response.json['id']
+
+
+@pytest.fixture(scope="session")
+def create_record():
+    """Factory pattern for a loaded Record.
+
+    The returned dict record has the interface of a Record.
+
+    It provides a default value for each required field.
+    """
+
+    def _create_record(metadata=None):
+        # TODO: Modify according to record schema
+        metadata = metadata or {}
+        record = {
+            "_access": {
+                # TODO: Remove if "access_right" includes it
+                "metadata_restricted": False,
+                "files_restricted": False,
+            },
+            "access_right": "open",
+            "title": "This is a record",
+            "description": "This record is a test record",
+            "owners": [1, 2, 3],
+            "internal": {
+                "access_levels": {},
+            },
+            "files": {
+            "enabled": True,  # Most tests don't care about files
+            },
+
+        }
+        record.update(metadata)
+        return record
+
+    return _create_record
+
+
+@pytest.fixture(scope="function")
+def create_real_record(create_record, location):
+    """Factory pattern to create a real Record.
+
+    This is needed for tests relying on database and search engine operations.
+    """
+
+    def _create_real_record(bucket, metadata=None):
+        record_dict = create_record(metadata)
+
+        record = Record.create(record_dict, with_bucket=False)
+
+        # Create link between record and bucket
+        RecordsBuckets.create(record=record.model, bucket=bucket)
+        record._bucket = bucket
+
+        return record
+        # Flush to index and database
+        # current_search.flush_and_refresh(index='*')
+        # db.session.commit()
+
+    return _create_real_record
